@@ -14,5 +14,11 @@ if [ $ERROR_CODE == 0 ]; then
     git submodule update --init --recursive
 fi
 
+# Install the pre-commit hooks.
+pip install . -t $PWD
+cp $PWD/bin/banned-api-hook $PWD/banned-api-hook
+export PATH="$PWD:$PATH";
+pre-commit install
+
 # Return success
 exit 0;

@@ -19,7 +19,9 @@ RUN apt-get update && \
     apt-get -y install \
     bash-completion \
     build-essential \
+    cppcheck \
     curl \
+    fd-find \
     gdb \
     lcov \
     libbz2-dev \
@@ -84,6 +86,8 @@ RUN if [[ $SHELL_CHOICE == "zsh" ]]; then \
 
 # Install Python dependencies
 RUN pip3 install \
+    pre-commit \
+    towncrier \
     cbor \
     cbor2 \
     cffi \
