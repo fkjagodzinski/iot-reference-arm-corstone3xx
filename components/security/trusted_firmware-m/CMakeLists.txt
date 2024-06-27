@@ -11,7 +11,11 @@ set(trusted_firmware-m_SOURCE_DIR
 include(ApplyPatches)
 
 set(PATCH_FILES_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}/integration/patches")
-set(PATCH_FILES "${PATCH_FILES_DIRECTORY}/0001-provisioning-Change-provisioning-log-messages.patch")
+set(PATCH_FILES
+    "${PATCH_FILES_DIRECTORY}/0001-provisioning-Change-provisioning-log-messages.patch"
+    "${PATCH_FILES_DIRECTORY}/0002-corstone300-Simplify-NS-partition-offset-definitions.patch"
+    "${PATCH_FILES_DIRECTORY}/0003-PoC-corstone300-Add-ML-model-component.patch"
+)
 iot_reference_arm_corstone3xx_apply_patches("${trusted_firmware-m_SOURCE_DIR}" "${PATCH_FILES}")
 
 add_subdirectory(integration)

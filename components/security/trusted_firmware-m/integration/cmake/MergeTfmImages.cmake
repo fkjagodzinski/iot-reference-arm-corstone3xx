@@ -42,6 +42,7 @@ function(iot_reference_arm_corstone3xx_tf_m_merge_images target)
                 ${srec_cat} ${BINARY_DIR}/api_ns/bin/bl2.bin -Binary -offset ${BL2_IMAGE_LOAD_ADDRESS}
                     ${BINARY_DIR}/api_ns/bin/tfm_s_signed.bin -Binary -offset ${S_IMAGE_LOAD_ADDRESS}
                     $<TARGET_FILE_DIR:${target}>/${target}_signed.bin -Binary -offset ${NS_IMAGE_LOAD_ADDRESS}
+                    $<TARGET_FILE_DIR:${target}>/${target}-model_signed.bin -Binary -offset ${NS_ML_MODEL_IMAGE_LOAD_ADDRESS}
                     ${ddr_binary_param}
                     ${ns_provisioning_data_param}
                     ${BINARY_DIR}/api_ns/bin/encrypted_provisioning_bundle.bin -Binary -offset ${S_PROVISIONING_BUNDLE_LOAD_ADDRESS}

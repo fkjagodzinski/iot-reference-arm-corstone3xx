@@ -13,6 +13,9 @@ include(ApplyPatches)
 set(PATCH_FILES_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}/integration/patches")
 set(PATCH_FILES
     "${PATCH_FILES_DIRECTORY}/0001-ota-abort-Fix-successful-abortion-check.patch"
+    "${PATCH_FILES_DIRECTORY}/0002-component-ID-Add-ML-model-file-path.patch"
+    "${PATCH_FILES_DIRECTORY}/0003-app-version-Do-not-store-version-in-a-global-var.patch"
+    "${PATCH_FILES_DIRECTORY}/0004-PAL-Implement-component-version-getter.patch"
 )
 iot_reference_arm_corstone3xx_apply_patches("${freertos_ota_pal_psa_SOURCE_DIR}" "${PATCH_FILES}")
 

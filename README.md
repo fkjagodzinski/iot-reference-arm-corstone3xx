@@ -1,5 +1,7 @@
 # IoT Reference Integration for Arm Corstone-3xx
 
+**For details about the ML model update PoC, see [the feature-specific readme file](ml-model-update-poc.md).**
+
 ## Introduction
 
 This reference integration demonstrates how to develop cloud connected

@@ -988,6 +988,10 @@ void vMlTask(void *arg)
 {
     (void)arg;
 
+    // Copy the entire model from the boot image @ 0x28280000 to execution area in DDR @ 0x60000000.
+    LogInfo( ( "Copying the ML model to DDR" ) );
+    memcpy((void *)(NS_ML_MODEL_IMAGE_EXECUTION_ADDRESS), (void *)(NS_ML_MODEL_IMAGE_LOAD_ADDRESS), (size_t)(NS_ML_MODEL_IMAGE_SIZE));
+
     EventBits_t flags = xEventGroupWaitBits(xSystemEvents, (EventBits_t)EVENT_MASK_ML_START, pdTRUE, pdFAIL, portMAX_DELAY);
 
     if (flags & EVENT_MASK_ML_START)

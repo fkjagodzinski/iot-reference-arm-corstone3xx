@@ -1,0 +1,108 @@
+From ee67ceb7ec5259a9e1d66f838e4c0c0ba2027651 Mon Sep 17 00:00:00 2001
+From: Filip Jagodzinski <filip.jagodzinski@arm.com>
+Date: Tue, 25 Jun 2024 12:58:12 +0000
+Subject: [PATCH 3/3] PAL: Implement component version getter
+
+Multi-component setup requires independent version handling for each
+component. Add an implementation for the extended API used for reading
+OTA update image version.
+
+Signed-off-by: Filip Jagodzinski <filip.jagodzinski@arm.com>
+---
+ ota_pal.c | 48 ++++++++++++++++++++++++++++++++++++++++++++++++
+ ota_pal.h | 20 ++++++++++++++++++++
+ 2 files changed, 68 insertions(+)
+
+diff --git a/ota_pal.c b/ota_pal.c
+index b9e6cc4..72a2ca7 100644
+--- a/ota_pal.c
++++ b/ota_pal.c
+@@ -745,6 +745,54 @@ OtaPalImageState_t otaPal_GetPlatformImageState( OtaFileContext_t * const pFileC
+     /* It should never goes here. But just for coding safety. */
+     return OtaPalImageStateInvalid;
+ }
++
++/**
++ * @brief Get the version of the OTA update image.
++ *
++ * @param[in] pFileContext File context of type OtaFileContext_t.
++ * @param[out] pxVersion Output parameter for version information.
++ *
++ * @return The OtaPalStatus_t error code is a combination of the main OTA PAL interface error and
++ *         the MCU specific sub error code. See ota_platform_interface.h for the OtaPalMainStatus_t
++ *         error codes and your specific PAL implementation for the sub error code.
++ *
++ * Major error codes returned are:
++ *
++ *   OtaPalSuccess on success.
++ *   OtaPalUninitialized: if you specify an uninitialized argument. No sub error code.
++ *   OtaPalBadImageState: if the internal call to PSA query fails for given component,
++ *                        or the component file path is invalid. No sub error code.
++ */
++OtaPalStatus_t otaPal_GetPlatformImageVersion( OtaFileContext_t * const pFileContext,
++                                               AppVersion32_t * pxVersion )
++{
++    if( pFileContext == NULL || pxVersion == NULL )
++    {
++        return OTA_PAL_COMBINE_ERR( OtaPalUninitialized, 0 );
++    }
++
++    psa_fwu_component_t uxComponent;
++    psa_status_t uxStatus;
++    psa_fwu_component_info_t xComponentInfo = { 0 };
++
++    if( PortConvertFilePathtoPSAComponentID( pFileContext, &uxComponent ) != OTA_PAL_COMBINE_ERR( OtaPalSuccess, 0 ) )
++    {
++        return OTA_PAL_COMBINE_ERR( OtaPalBadImageState, 0 );
++    }
++
++    uxStatus = psa_fwu_query( uxComponent, &xComponentInfo );
++    if( uxStatus != PSA_SUCCESS )
++    {
++        return OTA_PAL_COMBINE_ERR( OtaPalBadImageState, 0 );
++    }
++
++    pxVersion->u.x.major = xComponentInfo.version.major;
++    pxVersion->u.x.minor = xComponentInfo.version.minor;
++    pxVersion->u.x.build = (uint16_t)xComponentInfo.version.build;
++
++    return OTA_PAL_COMBINE_ERR( OtaPalSuccess, 0 );
++}
++
+ /**
+  * @brief Reset the device.
+  *
+diff --git a/ota_pal.h b/ota_pal.h
+index c530620..40adffa 100644
+--- a/ota_pal.h
++++ b/ota_pal.h
+@@ -231,6 +231,26 @@ OtaPalStatus_t otaPal_SetPlatformImageState( OtaFileContext_t * const pFileConte
+  */
+ OtaPalImageState_t otaPal_GetPlatformImageState( OtaFileContext_t * const pFileContext );
+ 
++/**
++ * @brief Get the version of the OTA update image.
++ *
++ * @param[in] pFileContext File context of type OtaFileContext_t.
++ * @param[out] pxVersion Output parameter for version information.
++ *
++ * @return The OtaPalStatus_t error code is a combination of the main OTA PAL interface error and
++ *         the MCU specific sub error code. See ota_platform_interface.h for the OtaPalMainStatus_t
++ *         error codes and your specific PAL implementation for the sub error code.
++ *
++ * Major error codes returned are:
++ *
++ *   OtaPalSuccess on success.
++ *   OtaPalUninitialized: if you specify an uninitialized argument. No sub error code.
++ *   OtaPalBadImageState: if the internal call to PSA query fails for given component,
++ *                        or the component file path is invalid. No sub error code.
++ */
++OtaPalStatus_t otaPal_GetPlatformImageVersion( OtaFileContext_t * const pFileContext,
++                                               AppVersion32_t * pxVersion );
++
+ /**
+  * @brief Reset the device.
+  *
+-- 
+2.45.2
+

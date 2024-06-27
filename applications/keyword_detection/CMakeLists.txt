@@ -23,6 +23,11 @@ set(AUDIO_SOURCE "ROM" CACHE STRING "Source of audio data (ROM | VSI)")
 # We will therefore change the build version from TF-M.
 set(MCUBOOT_IMAGE_VERSION_NS "0.0.1+10")
 set(MCUBOOT_IMAGE_VERSION_NS_UPDATE "0.0.1+20")
+set(MCUBOOT_IMAGE_VERSION_NS_ML_MODEL "0.0.1+11")
+set(MCUBOOT_IMAGE_VERSION_NS_ML_MODEL_UPDATE "0.0.1+42")
+set(MCUBOOT_IMAGE_NUMBER 3)
+set(MCUBOOT_NS_ML_MODEL_IMAGE_FLASH_AREA_NUM "1_0")
+set(DEFAULT_MCUBOOT_FLASH_MAP OFF)
 
 if (${ML_INFERENCE_ENGINE} STREQUAL "ETHOS")
     set(ETHOS_U_NPU_ENABLED ON)
@@ -42,6 +47,11 @@ set(TFM_CMAKE_APP_ARGS
     -DMCUBOOT_CONFIRM_IMAGE=${TFM_PLATFORM_CONFIRM_IMAGE}
     -DMCUBOOT_UPGRADE_STRATEGY=${TFM_PLATFORM_UPGRADE_STRATEGY}
     -DMCUBOOT_IMAGE_VERSION_NS=${MCUBOOT_IMAGE_VERSION_NS}
+    -DMCUBOOT_IMAGE_VERSION_NS_ML_MODEL=${MCUBOOT_IMAGE_VERSION_NS_ML_MODEL}
+    -DMCUBOOT_NS_ML_MODEL_IMAGE_FLASH_AREA_NUM=${MCUBOOT_NS_ML_MODEL_IMAGE_FLASH_AREA_NUM}
+    -DMCUBOOT_SECURITY_COUNTER_NS_ML_MODEL=1
+    -DMCUBOOT_IMAGE_NUMBER=${MCUBOOT_IMAGE_NUMBER}
+    -DDEFAULT_MCUBOOT_FLASH_MAP=${DEFAULT_MCUBOOT_FLASH_MAP}
     -DCONFIG_TFM_HALT_ON_CORE_PANIC=ON
     -DMCUBOOT_DATA_SHARING=ON
     -DPLATFORM_HAS_FIRMWARE_UPDATE_SUPPORT=ON
@@ -79,6 +89,13 @@ add_executable(keyword-detection
     ml_interface.cc
     model_config.cc
 )
+
+target_compile_definitions(keyword-detection
+    PRIVATE
+        -DNS_ML_MODEL_IMAGE_LOAD_ADDRESS=${NS_ML_MODEL_IMAGE_LOAD_ADDRESS}
+        -DNS_ML_MODEL_IMAGE_SIZE=${NS_ML_MODEL_IMAGE_SIZE}
+        -DNS_ML_MODEL_IMAGE_EXECUTION_ADDRESS=${NS_ML_MODEL_IMAGE_EXECUTION_ADDRESS}
+    )
 
 target_include_directories(keyword-detection
     PUBLIC
@@ -156,10 +173,12 @@ set_linker_script(keyword-detection)
 
 # The non-secure application image should be padded while being signed
 # Hence, passing "TRUE" as the input parameter to the pad option of sign function.
-iot_reference_arm_corstone3xx_tf_m_sign_image(
+iot_reference_arm_corstone3xx_tf_m_sign_images(
     keyword-detection
     keyword-detection_signed
     ${MCUBOOT_IMAGE_VERSION_NS}
+    keyword-detection-model_signed
+    ${MCUBOOT_IMAGE_VERSION_NS_ML_MODEL}
     TRUE
 )
 
@@ -167,10 +186,12 @@ iot_reference_arm_corstone3xx_tf_m_sign_image(
 # 1) the image to download is smaller without padding
 # 2) the trailer that keeps track of boot and update statuses should not be overwritten
 # Hence, passing "FALSE" as the input parameter for the pad option to the sign function.
-iot_reference_arm_corstone3xx_tf_m_sign_image(
+iot_reference_arm_corstone3xx_tf_m_sign_images(
     keyword-detection
     keyword-detection-update_signed
     ${MCUBOOT_IMAGE_VERSION_NS_UPDATE}
+    keyword-detection-model-update_signed
+    ${MCUBOOT_IMAGE_VERSION_NS_ML_MODEL_UPDATE}
     FALSE
 )
 
@@ -192,4 +213,11 @@ iot_reference_arm_corstone3xx_generate_aws_update_digest_and_signature(
     keyword-detection-update_signed
     update-digest
     update-signature
+)
+
+iot_reference_arm_corstone3xx_generate_aws_update_digest_and_signature(
+    keyword-detection
+    keyword-detection-model-update_signed
+    model-update-digest
+    model-update-signature
 )

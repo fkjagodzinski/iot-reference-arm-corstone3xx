@@ -422,6 +422,27 @@ static OtaTopicFilterCallback_t otaTopicFilterCallbacks[] =
     }
 };
 
+static struct
+{
+    psa_fwu_component_t id;
+    char * name;
+}
+xFwComponents[ FWU_COMPONENT_NUMBER ] =
+{
+    {
+        .id = FWU_COMPONENT_ID_SECURE,
+        .name = "Secure"
+    },
+    {
+        .id = FWU_COMPONENT_ID_NONSECURE,
+        .name = "Non-Secure"
+    },
+    {
+        .id = FWU_COMPONENT_ID_ML_MODEL,
+        .name = "ML Model"
+    }
+};
+
 /*-----------------------------------------------------------*/
 
 static void prvOTAEventBufferFree( OtaEventData_t * const pxBuffer )
@@ -1003,6 +1024,7 @@ static void setOtaInterfaces( OtaInterfaces_t * pOtaInterfaces )
     /* Initialize the OTA library PAL Interface.*/
     pOtaInterfaces->pal.getPlatformImageState = otaPal_GetPlatformImageState;
     pOtaInterfaces->pal.setPlatformImageState = otaPal_SetPlatformImageState;
+    pOtaInterfaces->pal.getPlatformImageVersion = otaPal_GetPlatformImageVersion;
     pOtaInterfaces->pal.writeBlock = otaPal_WriteBlock;
     pOtaInterfaces->pal.activate = otaPal_ActivateNewImage;
     pOtaInterfaces->pal.closeFile = otaPal_CloseFile;
@@ -1224,17 +1246,25 @@ static BaseType_t prvRunOTADemo( void )
 static void vOtaDemoTask( void * pvParam )
 {
     ( void ) pvParam;
+    AppVersion32_t xComponentVersion;
 
-    if( GetImageVersionPSA( FWU_COMPONENT_ID_NONSECURE ) == 0 )
+    assert( ( sizeof xFwComponents / sizeof xFwComponents[ 0 ] ) == FWU_COMPONENT_NUMBER );
+
+    LogInfo( ( "OTA over MQTT, firmware versions:" ) );
+
+    for( size_t i = 0; i < FWU_COMPONENT_NUMBER; ++i )
     {
-        LogInfo( ( "OTA over MQTT, Application version from appFirmwareVersion %u.%u.%u\n",
-                   appFirmwareVersion.u.x.major,
-                   appFirmwareVersion.u.x.minor,
-                   appFirmwareVersion.u.x.build ) );
-    }
-    else
-    {
-        LogError( ( "OTA over MQTT, unable to get application versions" ) );
+        if( GetImageVersionPSA( xFwComponents[ i ].id, &xComponentVersion ) == 0 )
+        {
+            LogInfo( ( "%s Component (ID %u) version=%u.%u.%u",
+                       xFwComponents[ i ].name, xFwComponents[ i ].id,
+                       xComponentVersion.u.x.major, xComponentVersion.u.x.minor, xComponentVersion.u.x.build ) );
+        }
+        else
+        {
+            LogError( ( "%s Component (ID %u) unable to get version",
+                        xFwComponents[ i ].name, xFwComponents[ i ].id ) );
+        }
     }
 
     /* Initialize semaphore for buffer operations. */

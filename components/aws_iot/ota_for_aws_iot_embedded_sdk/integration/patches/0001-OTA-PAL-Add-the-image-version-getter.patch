@@ -1,0 +1,248 @@
+From 4f9d6dca4f00653412dfa828aa434f7613bc26c3 Mon Sep 17 00:00:00 2001
+From: Filip Jagodzinski <filip.jagodzinski@arm.com>
+Date: Tue, 25 Jun 2024 12:51:53 +0000
+Subject: [PATCH] OTA PAL: Add the image version getter
+
+The current solution of keeping the NS image version in a global
+variable is sufficient for a single component update scenario. This is
+an obvious limitation for a multi-component project, e.g. with the ML
+model extracted to a separate TF-M component.
+
+Extend the OtaPalInterface_t with getPlatformImageVersion to support any
+number of TF-M components.
+
+Stop using a global variable to store the NS image version.
+
+Replace all the uses of the appFirmwareVersion global var with the
+appropriate call to the new image version getter.
+
+Signed-off-by: Filip Jagodzinski <filip.jagodzinski@arm.com>
+---
+ source/include/ota_appversion32.h       |  2 --
+ source/include/ota_platform_interface.h | 22 +++++++++++++
+ source/ota.c                            | 43 +++++++++++++++++++++----
+ source/ota_mqtt.c                       | 14 +++++---
+ 4 files changed, 69 insertions(+), 12 deletions(-)
+
+diff --git a/source/include/ota_appversion32.h b/source/include/ota_appversion32.h
+index 61ee83b..8c5b6bc 100644
+--- a/source/include/ota_appversion32.h
++++ b/source/include/ota_appversion32.h
+@@ -75,8 +75,6 @@ typedef struct
+     } u; /*!< @brief Version based on configuration in big endian or little endian. */
+ } AppVersion32_t;
+ 
+-extern const AppVersion32_t appFirmwareVersion; /*!< @brief Making the version number available globally through external linkage. */
+-
+ /* *INDENT-OFF* */
+ #ifdef __cplusplus
+     }
+diff --git a/source/include/ota_platform_interface.h b/source/include/ota_platform_interface.h
+index a00c603..cfa5bf3 100644
+--- a/source/include/ota_platform_interface.h
++++ b/source/include/ota_platform_interface.h
+@@ -37,6 +37,7 @@
+ /* *INDENT-ON* */
+ 
+ #include "ota_private.h"
++#include "ota_appversion32.h"
+ 
+ /**
+  * @otapalpage
+@@ -294,6 +295,26 @@ typedef OtaPalStatus_t ( * OtaPalSetPlatformImageState_t )( OtaFileContext_t * c
+  */
+ typedef OtaPalImageState_t ( * OtaPalGetPlatformImageState_t ) ( OtaFileContext_t * const pFileContext );
+ 
++/**
++ * @brief Get the version of the OTA update image.
++ *
++ * @param[in] pFileContext File context of type OtaFileContext_t.
++ * @param[out] pxVersion Output parameter for version information.
++ *
++ * @return The OtaPalStatus_t error code is a combination of the main OTA PAL interface error and
++ *         the MCU specific sub error code. See ota_platform_interface.h for the OtaPalMainStatus_t
++ *         error codes and your specific PAL implementation for the sub error code.
++ *
++ * Major error codes returned are:
++ *
++ *   OtaPalSuccess on success.
++ *   OtaPalUninitialized: if you specify an uninitialized argument. No sub error code.
++ *   OtaPalBadImageState: if the internal call to PSA query fails for given component,
++ *                        or the component file path is invalid. No sub error code.
++ */
++typedef OtaPalStatus_t ( * OtaPalGetPlatformImageVersion_t ) ( OtaFileContext_t * const pFileContext,
++                                                               AppVersion32_t * pxVersion );
++
+ /**
+  * @ingroup ota_struct_types
+  * @brief OTA pal Interface structure.
+@@ -314,6 +335,7 @@ typedef struct OtaPalInterface
+     OtaPalResetDevice_t reset;                           /*!< @brief Reset the device. */
+     OtaPalSetPlatformImageState_t setPlatformImageState; /*!< @brief Set the state of the OTA update image. */
+     OtaPalGetPlatformImageState_t getPlatformImageState; /*!< @brief Get the state of the OTA update image. */
++    OtaPalGetPlatformImageVersion_t getPlatformImageVersion; /*!< @brief Get the version of the OTA update image. */
+ } OtaPalInterface_t;
+ 
+ /* *INDENT-OFF* */
+diff --git a/source/ota.c b/source/ota.c
+index 0835879..6344d0b 100644
+--- a/source/ota.c
++++ b/source/ota.c
+@@ -670,6 +670,16 @@ static OtaErr_t updateJobStatusFromImageState( OtaImageState_t state,
+ {
+     OtaErr_t err = OtaErrNone;
+     OtaJobReason_t reason = JobReasonReceiving;
++    OtaPalStatus_t palStatus;
++    AppVersion32_t version;
++
++    /* Call the platform specific code to get the image version. */
++    palStatus = otaAgent.pOtaInterface->pal.getPlatformImageVersion( &( otaAgent.fileContext ), &version );
++
++    if( ( OTA_PAL_MAIN_ERR( palStatus ) ) != OtaPalSuccess )
++    {
++        return OtaErrUpdateJobStatusFailed;
++    }
+ 
+     if( state == OtaImageStateTesting )
+     {
+@@ -677,7 +687,7 @@ static OtaErr_t updateJobStatusFromImageState( OtaImageState_t state,
+         err = otaControlInterface.updateJobStatus( &otaAgent,
+                                                    JobStatusInProgress,
+                                                    JobReasonSelfTestActive,
+-                                                   0 );
++                                                   version.u.signedVersion32 );
+     }
+     else
+     {
+@@ -687,7 +697,7 @@ static OtaErr_t updateJobStatusFromImageState( OtaImageState_t state,
+             err = otaControlInterface.updateJobStatus( &otaAgent,
+                                                        JobStatusSucceeded,
+                                                        JobReasonAccepted,
+-                                                       appFirmwareVersion.u.signedVersion32 );
++                                                       version.u.signedVersion32 );
+         }
+         else
+         {
+@@ -1202,8 +1212,18 @@ static OtaErr_t processDataHandler( const OtaEventData_t * pEventData )
+         /* Check if this is firmware update. */
+         if( otaAgent.fileContext.fileType == configOTA_FIRMWARE_UPDATE_FILE_TYPE_ID )
+         {
++            AppVersion32_t version = { 0 };
++
++            // TODO: Is this acceptable?
++            //
++            // We keep the function flow unchanged (and do not add any new exit
++            // points), at the cost of no error handling for the call below.
++            // On any error, the version is set to 0.0.0.
++            (void) otaAgent.pOtaInterface->pal.getPlatformImageVersion( &( otaAgent.fileContext ), &version );
++
+             jobDoc.status = JobStatusInProgress;
+             jobDoc.reason = ( int32_t ) JobReasonSigCheckPassed;
++            jobDoc.subReason = version.u.signedVersion32;
+ 
+             otaJobEvent = OtaJobEventActivate;
+         }
+@@ -1939,11 +1959,22 @@ static OtaErr_t validateUpdateVersion( const OtaFileContext_t * pFileContext )
+     previousVersion.u.unsignedVersion32 = 0;
+     ( void ) previousVersion;
+ 
++    OtaPalStatus_t palStatus;
++    AppVersion32_t version;
++
++    /* Call the platform specific code to get the image version. */
++    palStatus = otaAgent.pOtaInterface->pal.getPlatformImageVersion( &( otaAgent.fileContext ), &version );
++    if( ( OTA_PAL_MAIN_ERR( palStatus ) ) != OtaPalSuccess )
++    {
++        // TODO: Which error code to use here?
++        return OtaErrJobParserError;
++    }
++
+     /* Only check for versions if the target is self */
+     if( ( otaAgent.serverFileID == 0U ) && ( otaAgent.fileContext.fileType == configOTA_FIRMWARE_UPDATE_FILE_TYPE_ID ) )
+     {
+         /* Check if version reported is the same as the running version. */
+-        if( pFileContext->updaterVersion == appFirmwareVersion.u.unsignedVersion32 )
++        if( pFileContext->updaterVersion == version.u.unsignedVersion32 )
+         {
+             /* The version is the same so either we're not actually the new firmware or
+              * someone messed up and sent firmware with the same version. In either case,
+@@ -1955,14 +1986,14 @@ static OtaErr_t validateUpdateVersion( const OtaFileContext_t * pFileContext )
+             err = OtaErrSameFirmwareVersion;
+         }
+         /* Check if update version received is older than current version.*/
+-        else if( pFileContext->updaterVersion > appFirmwareVersion.u.unsignedVersion32 )
++        else if( pFileContext->updaterVersion > version.u.unsignedVersion32 )
+         {
+             LogWarn( ( "Application version of the new image is lower than the current image: "
+                        "New images are expected to have a higher version number." ) );
+             err = OtaErrDowngradeNotAllowed;
+         }
+ 
+-        /* pFileContext->updaterVersion < appFirmwareVersion.u.unsignedVersion32 is true.
++        /* pFileContext->updaterVersion < version.u.unsignedVersion32 is true.
+          * Update version received is newer than current version. */
+         else
+         {
+@@ -1970,7 +2001,7 @@ static OtaErr_t validateUpdateVersion( const OtaFileContext_t * pFileContext )
+             LogInfo( ( "New image has a higher version number than the current image: "
+                        "New image version=%u.%u.%u"
+                        ", Previous image version=%u.%u.%u",
+-                       appFirmwareVersion.u.x.major, appFirmwareVersion.u.x.minor, appFirmwareVersion.u.x.build,
++                       version.u.x.major, version.u.x.minor, version.u.x.build,
+                        previousVersion.u.x.major, previousVersion.u.x.minor, previousVersion.u.x.build ) );
+         }
+     }
+diff --git a/source/ota_mqtt.c b/source/ota_mqtt.c
+index 8894003..ef709f8 100644
+--- a/source/ota_mqtt.c
++++ b/source/ota_mqtt.c
+@@ -196,12 +196,14 @@ static uint32_t buildStatusMessageReceiving( char * pMsgBuffer,
+  * @param[in] msgBufferSize Size of the message.
+  * @param[in] status Status of the operation.
+  * @param[in] reason Reason for job failure (if any).
++ * @param[in] subReason Component version.
+  * @return uint32_t Size of the message.
+  */
+ static uint32_t prvBuildStatusMessageSelfTest( char * pMsgBuffer,
+                                                size_t msgBufferSize,
+                                                OtaJobStatus_t status,
+-                                               int32_t reason );
++                                               int32_t reason,
++                                               int32_t subReason );
+ 
+ /**
+  * @brief Populate the response message with the status of the job.
+@@ -666,7 +668,8 @@ static uint32_t buildStatusMessageReceiving( char * pMsgBuffer,
+ static uint32_t prvBuildStatusMessageSelfTest( char * pMsgBuffer,
+                                                size_t msgBufferSize,
+                                                OtaJobStatus_t status,
+-                                               int32_t reason )
++                                               int32_t reason,
++                                               int32_t subReason )
+ {
+     uint32_t msgSize = 0;
+ 
+@@ -689,7 +692,10 @@ static uint32_t prvBuildStatusMessageSelfTest( char * pMsgBuffer,
+ 
+     assert( pMsgBuffer != NULL );
+ 
+-    ( void ) stringBuilderUInt32Hex( versionString, sizeof( versionString ), appFirmwareVersion.u.unsignedVersion32 );
++    AppVersion32_t version;
++    version.u.signedVersion32 = subReason;
++
++    ( void ) stringBuilderUInt32Hex( versionString, sizeof( versionString ), version.u.unsignedVersion32 );
+     pPayloadStringParts[ 0 ] = pOtaJobStatusStrings[ status ];
+     pPayloadStringParts[ 4 ] = pOtaJobReasonStrings[ reason ];
+     pPayloadStringParts[ 6 ] = versionString;
+@@ -982,7 +988,7 @@ OtaErr_t updateJobStatus_Mqtt( const OtaAgentContext_t * pAgentCtx,
+         {
+             /* We're no longer receiving but we're still In Progress so we are implicitly in the Self
+              * Test phase. Prepare to update the job status with the self_test phase (ready or active). */
+-            msgSize = prvBuildStatusMessageSelfTest( pMsg, sizeof( pMsg ), status, reason );
++            msgSize = prvBuildStatusMessageSelfTest( pMsg, sizeof( pMsg ), status, reason, subReason );
+         }
+     }
+     else
+-- 
+2.45.2
+

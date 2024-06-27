@@ -11,7 +11,7 @@ set(ota_for_aws_iot_embedded_sdk_SOURCE_DIR
 include(ApplyPatches)
 
 set(PATCH_FILES_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}/integration/patches")
-set(PATCH_FILES "${PATCH_FILES_DIRECTORY}/0001-Add-non-constant-appFirmwareVersion-extern.patch")
+set(PATCH_FILES "${PATCH_FILES_DIRECTORY}/0001-OTA-PAL-Add-the-image-version-getter.patch")
 iot_reference_arm_corstone3xx_apply_patches("${ota_for_aws_iot_embedded_sdk_SOURCE_DIR}" "${PATCH_FILES}")
 
 add_subdirectory(integration)
