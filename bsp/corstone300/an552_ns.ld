@@ -18,7 +18,8 @@
     <o1> Flash Size (in Bytes) <0x0-0xFFFFFFFF:8>
   </h>
   -----------------------------------------------------------------------------*/
-FLASH_NS_PARTITION_SIZE = 0x340000;
+FLASH_NS_ML_MODEL_PARTITION_SIZE = 0x100000;
+FLASH_NS_PARTITION_SIZE = 0x240000;
 FLASH_S_PARTITION_SIZE = 0x40000;
 ROM_START = 0x28000000;
 BL2_HEADER_SIZE = 0x400;
@@ -26,6 +27,12 @@ BL2_TRAILER_SIZE = 0xC00;
 
 __ROM_BASE = (ROM_START + FLASH_S_PARTITION_SIZE + BL2_HEADER_SIZE);
 __ROM_SIZE = (FLASH_NS_PARTITION_SIZE - BL2_HEADER_SIZE - BL2_TRAILER_SIZE);
+
+__MODEL_BASE = (0x60000000 + BL2_HEADER_SIZE);
+__MODEL_SIZE = (FLASH_NS_ML_MODEL_PARTITION_SIZE - BL2_HEADER_SIZE - BL2_TRAILER_SIZE);
+
+__DDR_BASE = (0x60000000 + FLASH_NS_ML_MODEL_PARTITION_SIZE);
+__DDR_SIZE = (0x10000000 - FLASH_NS_ML_MODEL_PARTITION_SIZE);
 
 /*--------------------- Embedded RAM Configuration ----------------------------
   <h> RAM Configuration
@@ -57,7 +64,8 @@ MEMORY
 {
   FLASH (rx)  : ORIGIN = __ROM_BASE, LENGTH = __ROM_SIZE
   RAM   (rwx) : ORIGIN = __RAM_NS_BASE, LENGTH = __RAM_NS_SIZE
-  DDR   (rwx) : ORIGIN = 0x60000000, LENGTH = 0x10000000
+  DDR   (rwx) : ORIGIN = __DDR_BASE, LENGTH = __DDR_SIZE
+  MODEL (rwx) : ORIGIN = __MODEL_BASE, LENGTH = __MODEL_SIZE
 }
 
 /* Linker script to place sections and symbol values.
@@ -189,15 +197,21 @@ SECTIONS
 
   } > RAM
 
+  model.bin :
+  {
+    . = ALIGN (16);
+    __nn_model_start__ = .;
+    /* nn model's default space */
+    *(nn_model)
+    __nn_model_end__ = .;
+  } > MODEL
+
   ddr.bin :
   {
     __ddr_start__ = .;
     . = ALIGN(16);
     /* nn model's baked in input matrices */
     *(ifm)
-    . = ALIGN(16);
-    /* nn model's default space */
-    *(nn_model)
     . = ALIGN (16);
     /* labels */
     *(labels)
